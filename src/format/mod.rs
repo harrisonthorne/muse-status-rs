@@ -166,6 +166,7 @@ impl Formatter {
                     }
                 }
                 let joined = string_outputs.join(",");
+                let escaped = escape(joined); // TODO only escape in pango strings
                 format!("[{}]", joined)
             }
             Mode::Lemonbar => {
@@ -326,7 +327,7 @@ impl Formatter {
 
 }
 
-// /// Returns 4 spaces as a separator between data.
-// fn separator<'a>() -> &'a str {
-//     "    "
-// }
+/// Turns ampersands into &amp; to be more friendly with pango
+fn escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+}

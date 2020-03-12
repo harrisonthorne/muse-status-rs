@@ -71,32 +71,36 @@ impl Block for MprisBlock {
     ) -> (Vec<JoinHandle<()>>, Sender<String>) {
         // This might seem dumb, but MprisBlock updates are dependent on updates from the mpris
         // client, so it will not listen to any "notify" requests
-        let (notify_tx, _) = std::sync::mpsc::channel::<String>();
+        let (update_request_sender, _) = std::sync::mpsc::channel::<String>();
 
         let mutex = Arc::new(Mutex::new(self));
+
+        let mutex_clone = mutex.clone();
         let player_listen_handle = thread::Builder::new().name(String::from("mpris player listener")).spawn(move || loop {
+            println!("starting search for mpris player");
             let player = loop {
                 thread::sleep(std::time::Duration::from_secs(5));
 
                 if let Ok(player_finder) = mpris_lib::PlayerFinder::new() {
                     if let Ok(player) = player_finder.find_active() {
+                        println!("found mpris player!");
                         break player
                     }
                 }
+                println!("none found; retrying in five seconds");
             };
 
             {
                 let metadata = player.get_metadata().unwrap();
-                let mut block = mutex.lock().unwrap();
+                let mut block = mutex_clone.lock().unwrap();
                 block.set_metadata(metadata);
-                block_sender.send(BlockOutput::new(block.name(), block.output())).unwrap();
+                request.block_sender.send(BlockOutput::from(&**block)).unwrap();
             }
-
 
             if let Ok(mut events) = player.events() {
                 while let Some(Ok(e)) = events.next() {
                     // update the player data, then send the update
-                    let mut block = mutex.lock().unwrap();
+                    let mut block = mutex_clone.lock().unwrap();
 
                     match e {
                         // update the block depending on the Event
@@ -107,18 +111,19 @@ impl Block for MprisBlock {
                         _ => (),
                     }
 
-                    block_sender.send(BlockOutput::new(block.name(), block.output())).unwrap();
+                    request.block_sender.send(BlockOutput::new(block.name(), block.output())).unwrap();
                 }
+                println!("mpris events loop broken");
+            } else {
+                println!("couldn't get mpris event stream");
             }
 
             {
-                let mut block = mutex.lock().unwrap();
+                let mut block = mutex_clone.lock().unwrap();
                 block.status = PlayerStatus::Stopped;
-                block_sender.send(BlockOutput::new(block.name(), block.output())).unwrap();
+                request.block_sender.send(BlockOutput::from(&**block)).unwrap();
             }
-
-        }).unwrap();
-
+        });
 
         (vec![player_listen_handle], notify_tx)
     }
