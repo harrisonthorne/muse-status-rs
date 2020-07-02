@@ -31,9 +31,27 @@ impl Default for NetworkBlock {
             strength_percent: 0,
             status: NetworkStatus::Disconnected,
 
-            connection_icons: vec!['\u{F092F}', '\u{F091F}', '\u{F0922}', '\u{F0925}', '\u{F0928}'],
-            packet_loss_icons: vec!['\u{F092B}', '\u{F0920}', '\u{F0923}', '\u{F0926}', '\u{F0929}'],
-            vpn_icons: vec!['\u{F092C}', '\u{F0921}', '\u{F0924}', '\u{F0927}', '\u{F092A}'],
+            connection_icons: vec![
+                '\u{F092F}',
+                '\u{F091F}',
+                '\u{F0922}',
+                '\u{F0925}',
+                '\u{F0928}',
+            ],
+            packet_loss_icons: vec![
+                '\u{F092B}',
+                '\u{F0920}',
+                '\u{F0923}',
+                '\u{F0926}',
+                '\u{F0929}',
+            ],
+            vpn_icons: vec![
+                '\u{F092C}',
+                '\u{F0921}',
+                '\u{F0924}',
+                '\u{F0927}',
+                '\u{F092A}',
+            ],
             disconnected_icon: '\u{F092B}',
             disabled_icon: '\u{F092E}',
 
@@ -55,7 +73,16 @@ impl NetworkBlock {
 
     fn packet_loss(&self) -> Result<bool, UpdateError> {
         let mut ping_cmd = std::process::Command::new("ping");
-        ping_cmd.args(&["ping", "-c", "2", "-W", "2", "-I", &self.iface_name, "8.8.8.8"]);
+        ping_cmd.args(&[
+            "ping",
+            "-c",
+            "2",
+            "-W",
+            "2",
+            "-I",
+            &self.iface_name,
+            "8.8.8.8",
+        ]);
 
         let status = match ping_cmd.status() {
             Ok(s) => s,
@@ -84,7 +111,8 @@ impl NetworkBlock {
                 };
 
                 // get the icon
-                let mut icon_index: usize = (icons.len() as i32 * self.strength_percent / 100) as usize;
+                let mut icon_index: usize =
+                    (icons.len() as i32 * self.strength_percent / 100) as usize;
 
                 // constrains index
                 icon_index = icon_index.min(icons.len() - 1);
@@ -107,32 +135,21 @@ impl Block for NetworkBlock {
             chrono::Local::now() + chrono::Duration::seconds(UPDATE_INTERVAL_SECONDS);
 
         // get interface
-        let iface = match get_interface(&self.iface_name) {
-            Ok(i) => i,
-            Err(e) => return Err(UpdateError {
-                block_name: self.name().to_string(),
-                message: format!("couldn't get interface: {}", e)
-            })
-        };
+        let iface = get_interface(&self.iface_name).map_err(|e| UpdateError {
+            block_name: self.name().to_string(),
+            message: format!("couldn't get network interface: {}", e),
+        })?;
 
-        // strength
-        let station = match iface.get_station_info() {
-            Ok(i) => i,
-            Err(e) => {
-                return Err(UpdateError {
-                    block_name: self.name().to_string(),
-                    message: format!("{}", e),
-                })
-            }
-        };
+        // get station
+        let station = iface.get_station_info().map_err(|e| UpdateError {
+            block_name: self.name().to_string(),
+            message: format!("{}", e),
+        })?;
 
         // get ssid
-        self.ssid = if let Some(ssid) = &iface.ssid {
-            Some(nl80211::parse_string(&ssid))
-        } else {
-            None
-        };
+        self.ssid = iface.ssid.map(|ssid| nl80211::parse_string(&ssid));
 
+        // connecting or connected?
 
         // get signal strength
         if let Some(s) = station.signal {
@@ -172,28 +189,23 @@ impl Block for NetworkBlock {
 }
 
 // only returns one interface that matches the name given
-fn get_interface(
-    interface_name: &str,
-) -> Result<nl80211::Interface, BasicError> {
+fn get_interface(interface_name: &str) -> Result<nl80211::Interface, BasicError> {
     // get all interfaces
     let interfaces = match Socket::connect() {
         Ok(mut s) => match s.get_interfaces_info() {
             Ok(i) => i,
             Err(e) => {
                 return Err(BasicError {
-                    message: format!(
-                                 "couldn't create network block (getting interfaces): {}",
-                                 e
-                             ),
+                    message: format!("couldn't create network block (getting interfaces): {}", e),
                 })
             }
         },
         Err(e) => {
             return Err(BasicError {
                 message: format!(
-                             "couldn't create network block (connecting to netlink socket): {}",
-                             e
-                         ),
+                    "couldn't create network block (connecting to netlink socket): {}",
+                    e
+                ),
             })
         }
     };
@@ -207,7 +219,7 @@ fn get_interface(
     }
 
     Err(BasicError {
-        message: format!("network interface not found: {}", interface_name)
+        message: format!("network interface not found: {}", interface_name),
     })
 }
 
