@@ -5,7 +5,6 @@ use crate::format::Attention;
 use chrono::prelude::*;
 use chrono::{DateTime, Local};
 use std::io::Cursor;
-use rodio::{Device, Source};
 
 const TIME_FORMAT: &str = "%-I:%M %P";
 const DATE_FORMAT: &str = "%a, %b %-d";
@@ -16,21 +15,17 @@ pub struct DateBlock {
     now: DateTime<Local>,
     next_update: DateTime<Local>,
     last_hour: Option<u8>,
-
-    audio_device: Device,
 }
 
 impl Default for DateBlock {
     fn default() -> Self {
         let now = chrono::Local::now();
 
-        let audio_device = rodio::default_output_device().unwrap();
 
         Self {
             now,
             next_update: (now + chrono::Duration::minutes(1)).with_second(0).unwrap(), // don't hate me
             last_hour: None,
-            audio_device,
         }
     }
 }
@@ -39,12 +34,6 @@ impl DateBlock {
     /// Returns a new DateBlock.
     pub fn new() -> Self {
         Default::default()
-    }
-
-    fn play_new_hour_sound(&self) {
-        let cursor = Cursor::new(include_bytes!("../new_hour.wav").as_ref());
-        let source = rodio::Decoder::new(cursor).unwrap();
-        rodio::play_raw(&self.audio_device, source.convert_samples());
     }
 }
 
@@ -59,7 +48,7 @@ impl Block for DateBlock {
         if let Some(last_hour) = &self.last_hour {
             if *last_hour != self.now.hour() as u8 {
                 if self.now.minute() == 0 {
-                    self.play_new_hour_sound();
+                    play_new_hour_sound();
                 }
                 self.last_hour = Some(self.now.hour() as u8);
             }
@@ -102,4 +91,13 @@ fn get_greeting() -> String {
     };
 
     String::from(greeting)
+}
+
+fn play_new_hour_sound() {
+    if let Some(audio_device) = rodio::default_output_device() {
+        let cursor = Cursor::new(include_bytes!("../new_hour.wav").as_ref());
+        if let Ok(sink) = rodio::play_once(&audio_device, cursor) {
+            sink.detach()
+        };
+    }
 }
